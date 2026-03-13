@@ -67,65 +67,67 @@
     <script>
         const form = document.getElementById('issueForm');
         
-        form.onsubmit = async (e) => {
-            e.preventDefault();
-            
-            const btn = document.getElementById('submitBtn');
-            btn.disabled = true;
-            btn.innerText = "กำลังประมวลผล...";
+        // ค้นหาส่วน form.onsubmit ใน index.html แล้ววางทับด้วยอันนี้
+form.onsubmit = async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.innerText = "กำลังประมวลผล...";
 
-            const fileInput = document.getElementById('fileInput').files[0];
-            let fileData = { base64: null, name: null };
+    const fileInput = document.getElementById('fileInput').files[0];
+    let fileData = { base64: null, name: null };
 
-            // ถ้ามีไฟล์ ให้แปลงเป็น Base64
-            if (fileInput) {
-                fileData = await new Promise((resolve) => {
-                    const reader = new FileReader();
-                    reader.onload = (ev) => resolve({
-                        base64: ev.target.result.split(',')[1],
-                        name: fileInput.name
-                    });
-                    reader.readAsDataURL(fileInput);
-                });
-            }
+    if (fileInput) {
+        const reader = new FileReader();
+        fileData = await new Promise((resolve) => {
+            reader.onload = (ev) => resolve({
+                base64: ev.target.result.split(',')[1],
+                name: fileInput.name
+            });
+            reader.readAsDataURL(fileInput);
+        });
+    }
 
-            const formData = new FormData(form);
-            const payload = {
-                action: "issueNumber",
-                docReference: formData.get('docReference'),
-                subject: formData.get('subject'),
-                sender: formData.get('sender'),
-                receiver: formData.get('receiver'),
-                base64: fileData.base64,
-                fileName: fileData.name
-            };
+    const formData = new FormData(form);
+    const payload = {
+        action: "issueNumber",
+        docReference: formData.get('docReference'),
+        subject: formData.get('subject'),
+        sender: formData.get('sender'),
+        receiver: formData.get('receiver'),
+        base64: fileData.base64,
+        fileName: fileData.name
+    };
 
-            try {
-                // ส่งข้อมูลไปที่ Google Apps Script
-                const response = await fetch(API_URL, {
-                    method: 'POST',
-                    body: JSON.stringify(payload)
-                });
+    try {
+        // ใช้โหมด no-cors ไม่ได้ เพราะเราต้องการอ่านเลขที่ส่งกลับมา
+        // ต้องมั่นใจว่าใน Code.gs มีการ setHeader('Access-Control-Allow-Origin', '*')
+        const response = await fetch(API_URL, {
+            method: 'POST',
+            body: JSON.stringify(payload),
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' } // ใช้ text/plain เพื่อเลี่ยงปัญหา CORS บางประเภท
+        });
 
-                const result = await response.text();
+        const result = await response.text();
 
-                Swal.fire({
-                    title: 'ออกเลขสำเร็จ!',
-                    html: `เลขทะเบียนส่งของคุณคือ<br><b class="text-5xl text-blue-600">${result}</b>`,
-                    icon: 'success',
-                    confirmButtonText: 'ตกลง',
-                    confirmButtonColor: '#000'
-                });
+        if (result.includes("Error")) throw new Error(result);
 
-                form.reset();
-            } catch (error) {
-                console.error(error);
-                Swal.fire('ผิดพลาด', 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้', 'error');
-            } finally {
-                btn.disabled = false;
-                btn.innerText = "บันทึกและออกเลขส่ง";
-            }
-        };
+        Swal.fire({
+            title: 'ออกเลขสำเร็จ!',
+            html: `เลขทะเบียนส่งของคุณคือ<br><b class="text-5xl text-blue-600">${result}</b>`,
+            icon: 'success',
+            confirmButtonText: 'ตกลง',
+            confirmButtonColor: '#000'
+        });
+        form.reset();
+    } catch (error) {
+        console.error(error);
+        Swal.fire('ผิดพลาด', 'กรุณาเช็กการตั้งค่า Deployment หรือสิทธิ์การเข้าถึงโฟลเดอร์', 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerText = "บันทึกและออกเลขส่ง";
+    }
+};
     </script>
 </body>
 </html>
