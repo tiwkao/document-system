@@ -1,46 +1,167 @@
-<script src="config.js"></script>
-<script>
-    const rowsPerPage = 10;
-    let currentPage = 1;
-    let tableData = [];
-    let filteredData = [];
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ทะเบียนส่งหนังสือ - ระบบสารบรรณ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body { font-family: 'Sarabun', sans-serif; }
+        .loader { border-top-color: #000; animation: spinner 1.5s linear infinite; }
+        @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
 
-    // ฟังก์ชันดึงข้อมูลจาก Google Sheets ผ่าน API
-    async function fetchData() {
-        const tableBody = document.querySelector("#data-table tbody");
-        tableBody.innerHTML = `<tr><td colspan="4" class="text-center py-8">กำลังโหลดข้อมูลจาก Cloud...</td></tr>`;
+    <nav class="bg-black p-4 text-white shadow-lg">
+        <div class="container mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold"><i class="fas fa-file-invoice mr-2"></i>ทะเบียนหนังสือส่ง</h1>
+            <a href="index.html" class="bg-white text-black px-4 py-2 rounded-md text-sm font-semibold hover:bg-gray-200 transition">
+                ← ออกเลขใหม่
+            </a>
+        </div>
+    </nav>
 
-        try {
-            // ส่ง parameter method=getData ไปที่ Script
-            const response = await fetch(`${API_URL}?method=getData`);
-            const data = await response.json();
+    <div class="container mx-auto mt-8 px-4 pb-12">
+        <div class="bg-white rounded-xl shadow-md p-6">
             
-            // data[0] คือหัวตาราง, data.slice(1) คือข้อมูลจริง
-            tableData = data.slice(1); 
-            applyFilters();
-        } catch (error) {
-            console.error("Error:", error);
-            Swal.fire("Error", "เชื่อมต่อฐานข้อมูลไม่ได้", "error");
+            <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+                <div class="relative w-full md:w-96">
+                    <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">
+                        <i class="fas fa-search"></i>
+                    </span>
+                    <input type="text" id="searchInput" onkeyup="filterTable()" placeholder="ค้นหาเลขที่, เรื่อง, หรือหน่วยงาน..." 
+                        class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:outline-none">
+                </div>
+                <button onclick="fetchData()" class="flex items-center text-gray-600 hover:text-black transition">
+                    <i class="fas fa-sync-alt mr-2"></i> รีเฟรชข้อมูล
+                </button>
+            </div>
+
+            <div class="overflow-x-auto border rounded-lg">
+                <table class="w-full text-left border-collapse" id="dataTable">
+                    <thead>
+                        <tr class="bg-gray-100 text-gray-700 uppercase text-sm leading-normal">
+                            <th class="py-3 px-6 border-b text-center w-24">เลขทะเบียน</th>
+                            <th class="py-3 px-6 border-b">เรื่อง</th>
+                            <th class="py-3 px-6 border-b">ถึง</th>
+                            <th class="py-3 px-6 border-b text-center">ไฟล์</th>
+                            <th class="py-3 px-6 border-b text-center">วันที่บันทึก</th>
+                        </tr>
+                    </thead>
+                    <tbody class="text-gray-600 text-sm font-light">
+                        </tbody>
+                </table>
+            </div>
+
+            <div id="loader" class="hidden flex flex-col items-center py-12">
+                <div class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-12 w-12 mb-4"></div>
+                <p class="text-gray-500">กำลังดึงข้อมูลจาก Cloud...</p>
+            </div>
+
+            <div class="flex justify-between items-center mt-6">
+                <p id="pageInfo" class="text-sm text-gray-500 font-medium"></p>
+                <div class="inline-flex gap-2">
+                    <button id="prevBtn" onclick="changePage(-1)" class="px-4 py-2 border rounded-md hover:bg-gray-100 disabled:opacity-50">ก่อนหน้า</button>
+                    <button id="nextBtn" onclick="changePage(1)" class="px-4 py-2 border rounded-md hover:bg-gray-100 disabled:opacity-50">ถัดไป</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script>
+        let allData = [];
+        let filteredData = [];
+        let currentPage = 1;
+        const rowsPerPage = 10;
+
+        // ดึงข้อมูลเมื่อโหลดหน้าเว็บ
+        window.onload = fetchData;
+
+        async function fetchData() {
+            const tbody = document.querySelector("#dataTable tbody");
+            const loader = document.getElementById("loader");
+            
+            tbody.innerHTML = "";
+            loader.classList.remove("hidden");
+
+            try {
+                const response = await fetch(`${API_URL}?method=getData`);
+                if (!response.ok) throw new Error("Network response was not ok");
+                
+                const data = await response.json();
+                
+                // ตัดหัวตารางออก (data[0]) และกลับด้านเพื่อให้เลขล่าสุดอยู่บนสุด
+                allData = data.slice(1).reverse(); 
+                filteredData = [...allData];
+                
+                renderTable();
+            } catch (error) {
+                console.error("Error:", error);
+                Swal.fire("ผิดพลาด", "ไม่สามารถโหลดข้อมูลจาก Google Sheets ได้", "error");
+            } finally {
+                loader.classList.add("hidden");
+            }
         }
-    }
 
-    // ฟังก์ชันส่งแก้ไขข้อมูล (POST)
-    async function updateData(formData) {
-        try {
-            const response = await fetch(API_URL, {
-                method: "POST",
-                body: JSON.stringify(formData)
-            });
-            const result = await response.text();
-            Swal.fire("สำเร็จ", "แก้ไขข้อมูลแล้ว", "success");
-            fetchData(); // โหลดข้อมูลใหม่
-        } catch (error) {
-            Swal.fire("ผิดพลาด", "บันทึกไม่สำเร็จ", "error");
+        function renderTable() {
+            const tbody = document.querySelector("#dataTable tbody");
+            tbody.innerHTML = "";
+
+            const start = (currentPage - 1) * rowsPerPage;
+            const end = start + rowsPerPage;
+            const paginatedItems = filteredData.slice(start, end);
+
+            if (paginatedItems.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center py-8 text-gray-400 font-medium italic">ไม่พบข้อมูลที่ค้นหา</td></tr>`;
+            } else {
+                paginatedItems.forEach(row => {
+                    const dateFormatted = row[5] ? new Date(row[5]).toLocaleDateString('th-TH') : '-';
+                    const fileLink = row[7] ? `<a href="${row[7]}" target="_blank" class="text-blue-500 hover:text-blue-700 text-xl"><i class="fas fa-file-pdf"></i></a>` : '-';
+                    
+                    const tr = document.createElement("tr");
+                    tr.className = "border-b border-gray-100 hover:bg-gray-50 transition";
+                    tr.innerHTML = `
+                        <td class="py-4 px-6 text-center font-bold text-black">${row[0]}</td>
+                        <td class="py-4 px-6 font-medium">${row[2]} <br><small class="text-gray-400 italic">${row[1] || ''}</small></td>
+                        <td class="py-4 px-6">${row[4]}</td>
+                        <td class="py-4 px-6 text-center">${fileLink}</td>
+                        <td class="py-4 px-6 text-center text-xs text-gray-400">${dateFormatted}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
+
+            updatePagination();
         }
-    }
 
-    // เรียกโหลดข้อมูลครั้งแรกเมื่อเปิดหน้าเว็บ
-    window.onload = fetchData;
+        function filterTable() {
+            const input = document.getElementById("searchInput").value.toLowerCase();
+            filteredData = allData.filter(row => 
+                row[0].toString().toLowerCase().includes(input) || 
+                row[2].toString().toLowerCase().includes(input) || 
+                row[4].toString().toLowerCase().includes(input)
+            );
+            currentPage = 1;
+            renderTable();
+        }
 
-    // ... (ฟังก์ชัน displayPage และ Filter อื่นๆ ปรับตามที่ผมแนะนำในข้อความก่อนหน้า) ...
-</script>
+        function updatePagination() {
+            const totalPages = Math.ceil(filteredData.length / rowsPerPage);
+            document.getElementById("pageInfo").innerText = `แสดงหน้า ${currentPage} จากทั้งหมด ${totalPages || 1} หน้า (ทั้งหมด ${filteredData.length} รายการ)`;
+            
+            document.getElementById("prevBtn").disabled = (currentPage === 1);
+            document.getElementById("nextBtn").disabled = (currentPage === totalPages || totalPages === 0);
+        }
+
+        function changePage(step) {
+            currentPage += step;
+            renderTable();
+        }
+    </script>
+</body>
+</html>
